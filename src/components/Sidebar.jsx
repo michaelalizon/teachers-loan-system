@@ -2,58 +2,39 @@
 import {
   LayoutDashboard,
   Users,
-  UserPlus,
+  ClipboardList,
   Wallet,
   CreditCard,
   BarChart3,
   Settings,
-  X
 } from 'lucide-react'
 
-function Sidebar({ currentPage, setCurrentPage, userRole }) {
-  const navigation = [
-    { name: 'Dashboard', icon: LayoutDashboard },
-    { name: 'Teachers', icon: Users },
-    { name: 'Registrations', icon: UserPlus },
-    { name: 'Loans', icon: Wallet },
-    { name: 'Payments', icon: CreditCard },
-    { name: 'Reports', icon: BarChart3 }
-  ]
+const navigation = [
+  { name: 'Dashboard', icon: LayoutDashboard },
+  { name: 'Teachers', icon: Users },
+  { name: 'Registrations', icon: ClipboardList },
+  { name: 'Loans', icon: Wallet },
+  { name: 'Payments', icon: CreditCard },
+  { name: 'Reports', icon: BarChart3 },
+]
 
-  const adminOnly = ['Registrations', 'Teachers', 'Settings']
-
-  const visibleNavigation = navigation.filter(item => {
-    if (adminOnly.includes(item.name)) {
-      return userRole === 'Administrator'
-    }
-    return true
-  })
-
+export default function Sidebar({ currentPage, setCurrentPage }) {
   return (
-    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-6 py-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <Wallet size={23} />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-800">
-              Teachers Loan
-            </h1>
-            <p className="text-xs text-slate-400">
-              Management System
-            </p>
-          </div>
-        </div>
+    <aside className="fixed left-0 top-0 z-50 flex h-screen w-64 flex-col overflow-hidden bg-slate-900 text-white">
+      <div className="shrink-0 border-b border-slate-700 px-6 py-6">
+        <h1 className="text-xl font-bold">Teacher Loan</h1>
+        <p className="mt-1 text-xs text-slate-400">
+          Management System
+        </p>
       </div>
 
-      <div className="px-4 py-5">
-        <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        <p className="mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
           Main Menu
         </p>
 
-        <nav className="space-y-1">
-          {visibleNavigation.map(item => {
+        <div className="space-y-2">
+          {navigation.map((item) => {
             const Icon = item.icon
             const active = currentPage === item.name
 
@@ -61,39 +42,33 @@ function Sidebar({ currentPage, setCurrentPage, userRole }) {
               <button
                 key={item.name}
                 onClick={() => setCurrentPage(item.name)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition ${
                   active
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
               >
                 <Icon size={19} />
-                {item.name}
+                <span>{item.name}</span>
               </button>
             )
           })}
-        </nav>
-      </div>
+        </div>
+      </nav>
 
-      <div className="mt-auto border-t border-slate-200 p-4">
+      <div className="shrink-0 border-t border-slate-700 bg-slate-900 p-4">
         <button
           onClick={() => setCurrentPage('Settings')}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition ${
             currentPage === 'Settings'
-              ? 'bg-blue-50 text-blue-700'
-              : 'text-slate-600 hover:bg-slate-50'
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
           }`}
         >
           <Settings size={19} />
-          Settings
+          <span>Settings</span>
         </button>
-
-        <p className="mt-4 px-3 text-xs text-slate-400">
-          {userRole}
-        </p>
       </div>
     </aside>
   )
 }
-
-export default Sidebar

@@ -1,10 +1,6 @@
 
 import { useEffect, useState } from 'react'
-import {
-  LogOut,
-  LoaderCircle,
-  ShieldAlert
-} from 'lucide-react'
+import { LogOut, LoaderCircle, ShieldAlert } from 'lucide-react'
 
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
@@ -179,14 +175,14 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-slate-100">
       <Sidebar
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         userRole={currentUser.role}
       />
 
-      <div className="min-w-0 flex-1">
+      <div className="ml-64 min-h-screen min-w-0">
         <Header />
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-8 py-3">
@@ -208,11 +204,13 @@ function App() {
           </button>
         </div>
 
-        <main className="p-8">
+        <main className="min-w-0 p-8">
           {currentPage === 'Dashboard' && <Dashboard />}
           {currentPage === 'Teachers' && <Teachers />}
           {currentPage === 'Registrations' && <Registrations />}
-          {currentPage === 'Loans' && <Loans />}
+
+         {currentPage === 'Loans' && <Loans />}
+
           {currentPage === 'Payments' && <Payments />}
           {currentPage === 'Reports' && <Reports />}
           {currentPage === 'Settings' && <Settings />}

@@ -1,17 +1,8 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Users,
-  UserPlus,
-  RefreshCw,
-  Search,
-  Check,
-  X,
-  Clock,
-  Eye,
-  AlertTriangle,
-  ClipboardCheck,
-  LockKeyhole,
+  Users, UserPlus, RefreshCw, Search, Check, X, Clock, Eye,
+  AlertTriangle, ClipboardCheck, LockKeyhole,
 } from "lucide-react";
 import { sendRequest } from "../services/api";
 
@@ -37,10 +28,10 @@ export default function Registrations() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [walkIn, setWalkIn] = useState(EMPTY_WALK_IN);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (!notice) return;
-
     const timer = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [notice]);
@@ -49,8 +40,10 @@ export default function Registrations() {
     setNotice({ type, message, key: Date.now() });
   }
 
-  async function loadPending(showError = true) {
-    setLoading(true);
+  async function loadPending(showError = true, showLoading = true) {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    if (showLoading) setLoading(true);
 
     try {
       const result = await sendRequest({
@@ -65,18 +58,22 @@ export default function Registrations() {
         ? result
         : result.registrations || result.data || [];
 
-      setPending(records);
+      setPending(Array.isArray(records) ? records : []);
     } catch (error) {
+      console.error("Pending registrations error:", error);
       if (showError) {
         showNotice("error", error.message || "Unable to load pending registrations.");
       }
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
+      if (showLoading) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadPending();
+    const interval = setInterval(() => loadPending(false, false), 10000);
+    return () => clearInterval(interval);
   }, []);
 
   function getValue(item, ...keys) {
@@ -99,28 +96,22 @@ export default function Registrations() {
   function shortenId(value) {
     if (!value) return "Not generated yet";
     const id = String(value);
-    if (id.length <= 18) return id;
-    return `${id.slice(0, 12)}...${id.slice(-4)}`;
+    return id.length <= 18 ? id : `${id.slice(0, 12)}...${id.slice(-4)}`;
   }
 
   const filtered = pending.filter((item) => {
-    const searchText = [
+    const text = [
       getName(item),
       getEmail(item),
       getValue(item, "Department", "department"),
       getValue(item, "Position", "position"),
-    ]
-      .join(" ")
-      .toLowerCase();
+    ].join(" ").toLowerCase();
 
-    return searchText.includes(search.toLowerCase());
+    return text.includes(search.toLowerCase());
   });
 
   function updateWalkIn(field, value) {
-    setWalkIn((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
+    setWalkIn((previous) => ({ ...previous, [field]: value }));
   }
 
   function submitWalkIn(event) {
@@ -181,111 +172,116 @@ export default function Registrations() {
       type: "review",
       registration,
       decision,
-      title: decision === "Approved"
-        ? "Approve Registration?"
-        : "Reject Registration?",
+      title: decision === "Approved" ? "Approve Registration?" : "Reject Registration?",
       message: `Are you sure you want to ${decision.toLowerCase()} the account for ${getName(registration)}?`,
     });
   }
 
-  
-async function executeConfirmation() {
-  if (!confirmation || saving) return;
+  async function executeConfirmation() {
+    if (!confirmation || saving) return;
 
-  const currentConfirmation = confirmation;
-  setSaving(true);
+    const currentConfirmation = confirmation;
+    setSaving(true);
 
-  try {
-    let result;
+    try {
+      if (currentConfirmation.type === "walkin") {
+        const registrationData = { ...currentConfirmation.walkInData };
+        delete registrationData.confirmPassword;
 
-    if (currentConfirmation.type === "walkin") {
-      const registrationData = { ...currentConfirmation.walkInData };
-      delete registrationData.confirmPassword;
+        const emailCheck = await sendRequest({
+          action: "checkRegistrationEmail",
+          email: registrationData.email,
+        });
 
-      // Check email first while keeping the modal open.
-      const emailCheck = await sendRequest({
-        action: "checkRegistrationEmail",
-        email: registrationData.email,
-      });
+        if (
+          !emailCheck ||
+          emailCheck.success === false ||
+          emailCheck.available === false
+        ) {
+          setConfirmation(null);
+          showNotice("error", "This email address is already registered.");
+          return;
+        }
 
-      if (
-        !emailCheck ||
-        emailCheck.success === false ||
-        emailCheck.available === false
-      ) {
+        const result = await sendRequest({
+          action: "adminRegisterEmployee",
+          ...registrationData,
+        });
+
+        if (!result || result.success !== true) {
+          throw new Error(result?.message || "Registration failed.");
+        }
+
+        setWalkIn({ ...EMPTY_WALK_IN });
+        setActiveTab("pending");
         setConfirmation(null);
         showNotice(
-          "error",
-          "This email address is already registered."
+          "success",
+          "Registration successful! The account is now in Pending Accounts."
         );
-        return;
+        loadPending(false, false);
+
+      } else {
+        const registration = currentConfirmation.registration;
+
+        if (!registration) {
+          throw new Error("Registration details are missing. Refresh Pending Accounts.");
+        }
+
+        const userId = getValue(registration, "UserID", "userId", "uid");
+
+        if (!userId) {
+          throw new Error("Unable to identify this account. Refresh Pending Accounts and try again.");
+        }
+
+        const result = await sendRequest({
+          action: "reviewRegistration",
+          userId,
+          decision: currentConfirmation.decision,
+        });
+
+        if (!result || result.success !== true) {
+          throw new Error(result?.message || "Unable to process registration.");
+        }
+
+        setSelected(null);
+        setConfirmation(null);
+        showNotice(
+          "success",
+          currentConfirmation.decision === "Approved"
+            ? "Registration approved successfully!"
+            : "Registration rejected successfully!"
+        );
+        loadPending(false, false);
       }
-
-      result = await sendRequest({
-        action: "adminRegisterEmployee",
-        ...registrationData,
-      });
-
-      if (!result || result.success !== true) {
-        throw new Error(result?.message || "Registration failed.");
-      }
-
-      setWalkIn({ ...EMPTY_WALK_IN });
-      setActiveTab("pending");
+    } catch (error) {
+      console.error("Registration confirmation error:", error);
       setConfirmation(null);
 
-      showNotice(
-        "success",
-        "Registration successful! Check Pending Accounts for the new teacher."
-      );
+      const message = error?.message || "";
 
-    } else {
-      const registration = currentConfirmation.registration;
-
-      result = await sendRequest({
-        action: "reviewRegistration",
-        userId:
-          registration.UserID ||
-          registration.userId ||
-          registration.uid,
-        decision: currentConfirmation.decision,
-      });
-
-      if (!result || result.success !== true) {
-        throw new Error(result?.message || "Unable to process registration.");
+      if (
+        currentConfirmation.type === "walkin" &&
+        message.toLowerCase().includes("userid")
+      ) {
+        showNotice(
+          "success",
+          "Registration successful! The account is now in Pending Accounts."
+        );
+        loadPending(false, false);
+      } else {
+        showNotice("error", message || "Something went wrong. Please try again.");
       }
-
-      setSelected(null);
-      setConfirmation(null);
-
-      showNotice(
-        "success",
-        currentConfirmation.decision === "Approved"
-          ? "Registration approved successfully!"
-          : "Registration rejected successfully!"
-      );
+    } finally {
+      setSaving(false);
     }
-
-    await loadPending(false);
-
-  } catch (error) {
-    setConfirmation(null);
-    showNotice(
-      "error",
-      error.message || "Something went wrong. Please try again."
-    );
-  } finally {
-    setSaving(false);
   }
-}
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Registration Management
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900">Registration Management</h1>
           <p className="mt-1 text-sm text-slate-500">
             Review online registrations and create walk-in accounts.
           </p>
@@ -317,37 +313,16 @@ async function executeConfirmation() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat
-          label="Pending Registrations"
-          value={pending.length}
-          icon={<Clock size={21} />}
-        />
-        <Stat
-          label="Online and Walk-in"
-          value="Both"
-          icon={<Users size={21} />}
-        />
-        <Stat
-          label="Walk-in Registration"
-          value="Available"
-          icon={<UserPlus size={21} />}
-        />
+        <Stat label="Pending Registrations" value={pending.length} icon={<Clock size={21} />} />
+        <Stat label="Online and Walk-in" value="Both" icon={<Users size={21} />} />
+        <Stat label="Walk-in Registration" value="Available" icon={<UserPlus size={21} />} />
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200">
-        <Tab
-          active={activeTab === "pending"}
-          onClick={() => setActiveTab("pending")}
-          icon={<ClipboardCheck size={17} />}
-        >
+        <Tab active={activeTab === "pending"} onClick={() => setActiveTab("pending")} icon={<ClipboardCheck size={17} />}>
           Pending Accounts
         </Tab>
-
-        <Tab
-          active={activeTab === "walkin"}
-          onClick={() => setActiveTab("walkin")}
-          icon={<UserPlus size={17} />}
-        >
+        <Tab active={activeTab === "walkin"} onClick={() => setActiveTab("walkin")} icon={<UserPlus size={17} />}>
           Walk-in Registration
         </Tab>
       </div>
@@ -358,15 +333,13 @@ async function executeConfirmation() {
             <div>
               <h2 className="font-bold text-slate-900">Pending Accounts</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Review the submitted information before approving an account.
+                Review submitted information before approving an account.
+                <span className="ml-1">Updates automatically every 10 seconds.</span>
               </p>
             </div>
 
             <div className="relative">
-              <Search
-                size={17}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
+              <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -378,63 +351,43 @@ async function executeConfirmation() {
 
           <div className="divide-y divide-slate-100">
             {loading ? (
-              <div className="p-12 text-center text-sm text-slate-500">
-                Loading registrations...
-              </div>
+              <div className="p-12 text-center text-sm text-slate-500">Loading registrations...</div>
             ) : filtered.length === 0 ? (
               <div className="p-12 text-center">
                 <ClipboardCheck className="mx-auto text-slate-300" size={36} />
-                <p className="mt-3 font-semibold text-slate-700">
-                  No pending registrations
-                </p>
+                <p className="mt-3 font-semibold text-slate-700">No pending registrations</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  New registrations will appear here.
+                  New registrations will appear here automatically.
                 </p>
               </div>
             ) : (
               filtered.map((item, index) => (
                 <div
-                  key={item.UserID || item.userId || item.uid || index}
+                  key={item?.UserID || item?.userId || item?.uid || index}
                   className="flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center"
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 font-bold text-blue-700">
-                      {getName(item)
-                        .split(" ")
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .map((word) => word[0])
-                        .join("")
-                        .toUpperCase()}
+                      {getName(item).split(" ").filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase()}
                     </div>
-
                     <div>
-                      <p className="font-semibold text-slate-900">
-                        {getName(item)}
-                      </p>
+                      <p className="font-semibold text-slate-900">{getName(item)}</p>
                       <p className="text-sm text-slate-500">{getEmail(item)}</p>
                       <p className="mt-1 text-xs text-slate-400">
-                        {getValue(item, "Department", "department") ||
-                          "Department not specified"}
+                        {getValue(item, "Department", "department") || "Department not specified"}
                         {" · "}
-                        {getValue(item, "Position", "position") ||
-                          "Position not specified"}
+                        {getValue(item, "Position", "position") || "Position not specified"}
                       </p>
                       {getValue(item, "EmployeeID", "employeeId") && (
                         <p className="mt-1 text-xs text-slate-400">
-                          Employee ID:{" "}
-                          {shortenId(
-                            getValue(item, "EmployeeID", "employeeId")
-                          )}
+                          Employee ID: {shortenId(getValue(item, "EmployeeID", "employeeId"))}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                      Pending
-                    </span>
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Pending</span>
                     <button
                       type="button"
                       onClick={() => setSelected(item)}
@@ -454,9 +407,7 @@ async function executeConfirmation() {
       {activeTab === "walkin" && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-6">
-            <h2 className="text-lg font-bold text-slate-900">
-              Walk-in Employee Registration
-            </h2>
+            <h2 className="text-lg font-bold text-slate-900">Walk-in Employee Registration</h2>
             <p className="mt-1 text-sm text-slate-500">
               Enter the employee's complete information and create a pending account.
             </p>
@@ -464,72 +415,14 @@ async function executeConfirmation() {
 
           <form onSubmit={submitWalkIn} className="space-y-5">
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field
-                label="Full Name"
-                required
-                value={walkIn.fullName}
-                onChange={(value) => updateWalkIn("fullName", value)}
-                placeholder="Enter complete name"
-              />
-
-              <Field
-                label="Email Address"
-                type="email"
-                required
-                value={walkIn.email}
-                onChange={(value) => updateWalkIn("email", value)}
-                placeholder="Enter email address"
-              />
-
-              <Field
-                label="Password"
-                type="password"
-                required
-                value={walkIn.password}
-                onChange={(value) => updateWalkIn("password", value)}
-                placeholder="Create account password"
-              />
-
-              <Field
-                label="Confirm Password"
-                type="password"
-                required
-                value={walkIn.confirmPassword}
-                onChange={(value) => updateWalkIn("confirmPassword", value)}
-                placeholder="Re-enter password"
-              />
-
-              <Field
-                label="Contact Number"
-                required
-                value={walkIn.contactNumber}
-                onChange={(value) => updateWalkIn("contactNumber", value)}
-                placeholder="Enter contact number"
-              />
-
-              <Field
-                label="Department"
-                required
-                value={walkIn.department}
-                onChange={(value) => updateWalkIn("department", value)}
-                placeholder="Enter department"
-              />
-
-              <Field
-                label="Position"
-                required
-                value={walkIn.position}
-                onChange={(value) => updateWalkIn("position", value)}
-                placeholder="Enter position"
-              />
-
-              <Field
-                label="Address"
-                required
-                value={walkIn.address}
-                onChange={(value) => updateWalkIn("address", value)}
-                placeholder="Enter complete address"
-              />
+              <Field label="Full Name" required value={walkIn.fullName} onChange={(value) => updateWalkIn("fullName", value)} placeholder="Enter complete name" />
+              <Field label="Email Address" type="email" required value={walkIn.email} onChange={(value) => updateWalkIn("email", value)} placeholder="Enter email address" />
+              <Field label="Password" type="password" required value={walkIn.password} onChange={(value) => updateWalkIn("password", value)} placeholder="Create account password" />
+              <Field label="Confirm Password" type="password" required value={walkIn.confirmPassword} onChange={(value) => updateWalkIn("confirmPassword", value)} placeholder="Re-enter password" />
+              <Field label="Contact Number" required value={walkIn.contactNumber} onChange={(value) => updateWalkIn("contactNumber", value)} placeholder="Enter contact number" />
+              <Field label="Department" required value={walkIn.department} onChange={(value) => updateWalkIn("department", value)} placeholder="Enter department" />
+              <Field label="Position" required value={walkIn.position} onChange={(value) => updateWalkIn("position", value)} placeholder="Enter position" />
+              <Field label="Address" required value={walkIn.address} onChange={(value) => updateWalkIn("address", value)} placeholder="Enter complete address" />
             </div>
 
             <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
@@ -537,12 +430,9 @@ async function executeConfirmation() {
                 <LockKeyhole size={17} />
                 <p className="text-sm font-semibold">Account Information</p>
               </div>
+              <p className="mt-1 text-sm text-blue-700">Account type: Regular Teacher</p>
               <p className="mt-1 text-sm text-blue-700">
-                Account type: Regular Teacher
-              </p>
-              <p className="mt-1 text-sm text-blue-700">
-                The system will generate the Employee ID automatically. This
-                account will remain Pending until approved.
+                The system generates the Employee ID automatically. This account remains Pending until approved.
               </p>
             </div>
 
@@ -561,41 +451,22 @@ async function executeConfirmation() {
       )}
 
       {selected && (
-        <Modal
-          title="Review Registration"
-          onClose={() => !saving && setSelected(null)}
-        >
+        <Modal title="Review Registration" onClose={() => !saving && setSelected(null)}>
           <div className="space-y-5">
             <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Applicant Information
-              </p>
-              <h3 className="mt-2 text-lg font-bold text-slate-900">
-                {getName(selected)}
-              </h3>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Applicant Information</p>
+              <h3 className="mt-2 text-lg font-bold text-slate-900">{getName(selected)}</h3>
               <p className="text-sm text-slate-500">{getEmail(selected)}</p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Info label="Department" value={getValue(selected, "Department", "department")} />
               <Info label="Position" value={getValue(selected, "Position", "position")} />
-              <Info
-                label="Employee Type"
-                value={getValue(selected, "EmployeeType", "employeeType") || "Regular Teacher"}
-              />
-              <Info
-                label="Contact Number"
-                value={getValue(selected, "ContactNumber", "contactNumber")}
-              />
+              <Info label="Employee Type" value={getValue(selected, "EmployeeType", "employeeType") || "Regular Teacher"} />
+              <Info label="Contact Number" value={getValue(selected, "ContactNumber", "contactNumber")} />
               <Info label="Address" value={getValue(selected, "Address", "address")} />
-              <Info
-                label="Employee ID"
-                value={shortenId(getValue(selected, "EmployeeID", "employeeId"))}
-              />
-              <Info
-                label="Registration Date"
-                value={getValue(selected, "CreatedAt", "createdAt")}
-              />
+              <Info label="Employee ID" value={shortenId(getValue(selected, "EmployeeID", "employeeId"))} />
+              <Info label="Registration Date" value={getValue(selected, "CreatedAt", "createdAt")} />
             </div>
 
             <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 pt-5 sm:flex-row">
@@ -607,7 +478,6 @@ async function executeConfirmation() {
               >
                 Reject
               </button>
-
               <button
                 type="button"
                 disabled={saving}
@@ -623,17 +493,12 @@ async function executeConfirmation() {
       )}
 
       {confirmation && (
-        <Modal
-          title={confirmation.title}
-          onClose={() => !saving && setConfirmation(null)}
-        >
+        <Modal title={confirmation.title} onClose={() => !saving && setConfirmation(null)}>
           <div className="flex gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
               <AlertTriangle size={20} />
             </div>
-            <p className="text-sm leading-6 text-slate-600">
-              {confirmation.message}
-            </p>
+            <p className="text-sm leading-6 text-slate-600">{confirmation.message}</p>
           </div>
 
           <div className="mt-6 flex justify-end gap-2">
@@ -689,19 +554,11 @@ function Tab({ active, onClick, icon, children }) {
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  type = "text",
-}) {
+function Field({ label, value, onChange, placeholder, required, type = "text" }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-sm font-medium text-slate-700">
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
+        {label}{required && <span className="ml-1 text-red-500">*</span>}
       </span>
       <input
         type={type}
@@ -719,9 +576,7 @@ function Info({ label, value }) {
   return (
     <div>
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-medium text-slate-800">
-        {value || "Not provided"}
-      </p>
+      <p className="mt-1 break-words text-sm font-medium text-slate-800">{value || "Not provided"}</p>
     </div>
   );
 }

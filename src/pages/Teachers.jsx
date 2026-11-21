@@ -25,13 +25,39 @@ export default function Teachers() {
 
   const loadTeachers = async () => {
     setLoading(true);
+
     try {
       const result = await getEmployees();
+
       const list = Array.isArray(result)
         ? result
         : result?.employees || result?.data || [];
 
-      setTeachers(list);
+      // Keep approved employee records only.
+      // Pending and rejected accounts are excluded.
+      const approvedTeachers = list.filter((teacher) => {
+        const status = String(
+          teacher.Status || teacher.status || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const isApproved = [
+          "active",
+          "inactive",
+          "approved",
+        ].includes(status);
+
+        const employeeType = String(
+          teacher.EmployeeType || teacher.employeeType || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        return isApproved && employeeType !== "job order";
+      });
+
+      setTeachers(approvedTeachers);
     } catch (error) {
       setNotice(error.message || "Unable to load teacher records.");
     } finally {
@@ -48,8 +74,9 @@ export default function Teachers() {
       const name = teacher.FullName || teacher.fullName || "";
       const id = teacher.EmployeeID || teacher.employeeId || "";
       const email = teacher.Email || teacher.email || "";
-      const department = teacher.Department || teacher.department || "";
-      const status = teacher.Status || teacher.status || "Active";
+      const department =
+        teacher.Department || teacher.department || "";
+      const status = teacher.Status || teacher.status || "";
 
       const matchesSearch = [name, id, email, department]
         .join(" ")
@@ -60,40 +87,35 @@ export default function Teachers() {
         statusFilter === "All" ||
         status.toLowerCase() === statusFilter.toLowerCase();
 
-      const isTeacher =
-        (teacher.EmployeeType || teacher.employeeType || "")
-          .toLowerCase() !== "job order";
-
-      return matchesSearch && matchesStatus && isTeacher;
+      return matchesSearch && matchesStatus;
     });
   }, [teachers, search, statusFilter]);
 
   const activeCount = teachers.filter(
-    (t) =>
-      (t.Status || t.status || "").toLowerCase() === "active" &&
-      (t.EmployeeType || t.employeeType || "").toLowerCase() !== "job order"
+    (teacher) =>
+      (teacher.Status || teacher.status || "").toLowerCase() ===
+      "active"
   ).length;
 
   const inactiveCount = teachers.filter(
-    (t) =>
-      (t.Status || t.status || "").toLowerCase() === "inactive" &&
-      (t.EmployeeType || t.employeeType || "").toLowerCase() !== "job order"
+    (teacher) =>
+      (teacher.Status || teacher.status || "").toLowerCase() ===
+      "inactive"
   ).length;
 
-  const teacherCount = teachers.filter(
-    (t) =>
-      (t.EmployeeType || t.employeeType || "").toLowerCase() !== "job order"
-  ).length;
+  const teacherCount = teachers.length;
 
   const openEdit = (teacher) => {
     setNotice("");
+
     setEditing({
       EmployeeID: teacher.EmployeeID || teacher.employeeId || "",
       FullName: teacher.FullName || teacher.fullName || "",
       Department: teacher.Department || teacher.department || "",
       Position: teacher.Position || teacher.position || "",
       Email: teacher.Email || teacher.email || "",
-      ContactNumber: teacher.ContactNumber || teacher.contactNumber || "",
+      ContactNumber:
+        teacher.ContactNumber || teacher.contactNumber || "",
     });
   };
 
@@ -127,6 +149,7 @@ export default function Teachers() {
     if (!confirmation) return;
 
     const { teacher, newStatus } = confirmation;
+
     setSaving(true);
     setNotice("");
 
@@ -159,7 +182,7 @@ export default function Teachers() {
             Teachers Management
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Manage existing teacher profiles and account status.
+            Manage approved teacher profiles and account status.
           </p>
         </div>
 
@@ -168,7 +191,10 @@ export default function Teachers() {
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          <RefreshCw
+            size={16}
+            className={loading ? "animate-spin" : ""}
+          />
           Refresh
         </button>
       </div>
@@ -200,7 +226,9 @@ export default function Teachers() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="font-bold text-slate-900">Teacher Directory</h2>
+            <h2 className="font-bold text-slate-900">
+              Teacher Directory
+            </h2>
             <p className="mt-1 text-sm text-slate-500">
               Only approved teacher records appear here.
             </p>
@@ -214,7 +242,7 @@ export default function Teachers() {
               />
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search teachers..."
                 className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500 sm:w-64"
               />
@@ -222,7 +250,7 @@ export default function Teachers() {
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
             >
               <option value="All">All Status</option>
@@ -244,6 +272,7 @@ export default function Teachers() {
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {loading ? (
                 <tr>
@@ -254,15 +283,17 @@ export default function Teachers() {
               ) : filteredTeachers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-4 py-12 text-center text-slate-500">
-                    No teacher records found.
+                    No approved teacher records found.
                   </td>
                 </tr>
               ) : (
                 filteredTeachers.map((teacher) => {
                   const name =
                     teacher.FullName || teacher.fullName || "Unnamed";
-                  const id = teacher.EmployeeID || teacher.employeeId || "";
-                  const status = teacher.Status || teacher.status || "Active";
+                  const id =
+                    teacher.EmployeeID || teacher.employeeId || "";
+                  const status =
+                    teacher.Status || teacher.status || "Active";
 
                   return (
                     <tr
@@ -281,13 +312,16 @@ export default function Teachers() {
                               .toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-semibold text-slate-900">{name}</p>
+                            <p className="font-semibold text-slate-900">
+                              {name}
+                            </p>
                             <p className="text-xs text-slate-500">
                               {teacher.Email || teacher.email || "No email"}
                             </p>
                           </div>
                         </div>
                       </td>
+
                       <td className="px-4 py-4 font-mono text-xs text-slate-600">
                         {id}
                       </td>
@@ -297,6 +331,7 @@ export default function Teachers() {
                       <td className="px-4 py-4 text-slate-600">
                         {teacher.Position || teacher.position || "—"}
                       </td>
+
                       <td className="px-4 py-4">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -308,6 +343,7 @@ export default function Teachers() {
                           {status}
                         </span>
                       </td>
+
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
                           <button
@@ -317,6 +353,7 @@ export default function Teachers() {
                           >
                             <Pencil size={16} />
                           </button>
+
                           <button
                             onClick={() =>
                               setConfirmation({
@@ -352,16 +389,53 @@ export default function Teachers() {
       </div>
 
       {editing && (
-        <Modal onClose={() => setEditing(null)} title="Edit Teacher Profile">
+        <Modal
+          onClose={() => setEditing(null)}
+          title="Edit Teacher Profile"
+        >
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full Name" value={editing.FullName} onChange={(v) => setEditing({ ...editing, FullName: v })} />
-            <Field label="Email Address" value={editing.Email} onChange={(v) => setEditing({ ...editing, Email: v })} />
-            <Field label="Department" value={editing.Department} onChange={(v) => setEditing({ ...editing, Department: v })} />
-            <Field label="Position" value={editing.Position} onChange={(v) => setEditing({ ...editing, Position: v })} />
-            <Field label="Contact Number" value={editing.ContactNumber} onChange={(v) => setEditing({ ...editing, ContactNumber: v })} />
+            <Field
+              label="Full Name"
+              value={editing.FullName}
+              onChange={(value) =>
+                setEditing({ ...editing, FullName: value })
+              }
+            />
+            <Field
+              label="Email Address"
+              value={editing.Email}
+              onChange={(value) =>
+                setEditing({ ...editing, Email: value })
+              }
+            />
+            <Field
+              label="Department"
+              value={editing.Department}
+              onChange={(value) =>
+                setEditing({ ...editing, Department: value })
+              }
+            />
+            <Field
+              label="Position"
+              value={editing.Position}
+              onChange={(value) =>
+                setEditing({ ...editing, Position: value })
+              }
+            />
+            <Field
+              label="Contact Number"
+              value={editing.ContactNumber}
+              onChange={(value) =>
+                setEditing({ ...editing, ContactNumber: value })
+              }
+            />
           </div>
+
           <div className="mt-6 flex justify-end gap-2">
-            <button onClick={() => setEditing(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">
+            <button
+              onClick={() => setEditing(null)}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold"
+            >
               Cancel
             </button>
             <button
@@ -377,7 +451,10 @@ export default function Teachers() {
       )}
 
       {confirmation && (
-        <Modal onClose={() => setConfirmation(null)} title="Confirm Account Status">
+        <Modal
+          onClose={() => setConfirmation(null)}
+          title="Confirm Account Status"
+        >
           <div className="flex gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
               <AlertTriangle size={20} />
@@ -389,13 +466,18 @@ export default function Teachers() {
                   : "Activate this teacher?"}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                {confirmation.teacher.FullName || confirmation.teacher.fullName}
-                {" "}will be set to {confirmation.newStatus.toLowerCase()}.
+                {confirmation.teacher.FullName ||
+                  confirmation.teacher.fullName}{" "}
+                will be set to {confirmation.newStatus.toLowerCase()}.
               </p>
             </div>
           </div>
+
           <div className="mt-6 flex justify-end gap-2">
-            <button onClick={() => setConfirmation(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">
+            <button
+              onClick={() => setConfirmation(null)}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold"
+            >
               Cancel
             </button>
             <button
@@ -419,7 +501,9 @@ function StatCard({ label, value, icon }) {
         <p className="text-sm text-slate-500">{label}</p>
         <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
       </div>
-      <div className="rounded-xl bg-blue-50 p-3 text-blue-700">{icon}</div>
+      <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
+        {icon}
+      </div>
     </div>
   );
 }
@@ -427,10 +511,12 @@ function StatCard({ label, value, icon }) {
 function Field({ label, value, onChange }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-slate-700">
+        {label}
+      </span>
       <input
         value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
       />
     </label>
@@ -443,7 +529,10 @@ function Modal({ title, onClose, children }) {
       <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+          >
             <X size={19} />
           </button>
         </div>

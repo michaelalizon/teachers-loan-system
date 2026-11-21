@@ -64,8 +64,8 @@ const calculateSchedule = (principal, annualRate, months, startDate) => {
   return schedule
 }
 
-function Loans() {
-  const [activeTab, setActiveTab] = useState('Applications')
+function Loans({ initialTab = 'Applications' }) {
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [applications, setApplications] = useState([])
   const [loans, setLoans] = useState([])
   const [payments, setPayments] = useState([])
