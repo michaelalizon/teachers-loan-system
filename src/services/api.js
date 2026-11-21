@@ -1,7 +1,8 @@
 
 import { auth } from '../firebase'
 
-const API_URL = '/api'
+// Google Apps Script Web App URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbyj0x9x-3Q8BbLTB1tZx8xzVBp7-76rYl7VcnGuc_KxxceIbkOp3z635jneTk3EQ9U1ow/exec'
 
 async function publicRequest(data) {
   const response = await fetch(API_URL, {
@@ -9,7 +10,8 @@ async function publicRequest(data) {
     headers: {
       'Content-Type': 'text/plain;charset=utf-8'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
+    redirect: 'follow'
   })
 
   const result = await response.json()
@@ -21,7 +23,6 @@ async function publicRequest(data) {
   return result
 }
 
-// Public: check whether an email can register or link to a walk-in record.
 export async function checkRegistrationEmail(email) {
   return publicRequest({
     action: 'checkRegistrationEmail',
@@ -29,7 +30,6 @@ export async function checkRegistrationEmail(email) {
   })
 }
 
-// Public: save a new Firebase registration or link an existing walk-in record.
 export async function registerFirebaseAccount(profile) {
   const user = auth.currentUser
 
@@ -46,7 +46,6 @@ export async function registerFirebaseAccount(profile) {
   })
 }
 
-// Public request: does not require login.
 export async function checkAdministratorExists() {
   const result = await publicRequest({
     action: 'checkAdministratorExists'
@@ -72,7 +71,8 @@ export async function sendRequest(data, forceRefresh = false) {
     body: JSON.stringify({
       ...data,
       idToken
-    })
+    }),
+    redirect: 'follow'
   })
 
   const result = await response.json()
@@ -85,7 +85,10 @@ export async function sendRequest(data, forceRefresh = false) {
 }
 
 export async function testBackendConnection() {
-  const response = await fetch(`${API_URL}?action=health`)
+  const response = await fetch(`${API_URL}?action=health`, {
+    redirect: 'follow'
+  })
+
   const result = await response.json()
 
   if (!result.success) {
@@ -111,8 +114,6 @@ export async function verifyUserSession() {
   return result.user
 }
 
-// Kept for compatibility with any older components.
-// New registrations should use registerFirebaseAccount(profile).
 export async function registerUser() {
   throw new Error(
     'The old registration method is no longer used. Submit the employee profile instead.'
