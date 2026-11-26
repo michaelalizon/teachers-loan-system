@@ -28,6 +28,16 @@ function LoanApplications() {
   const [reviewing, setReviewing] = useState(false)
   const [confirmDecision, setConfirmDecision] = useState('')
 
+const [renewalPreview, setRenewalPreview] = useState(null)
+const [renewalForm, setRenewalForm] = useState({
+  reloanAmount: '',
+  settlementMethod: 'HALF_PRINCIPAL',
+  includeInsurance: false,
+  surcharge: '0'
+})
+const [calculatingRenewal, setCalculatingRenewal] = useState(false)
+
+
   function getValue(item, ...keys) {
     for (const key of keys) {
       if (item?.[key] !== undefined && item[key] !== null) {
@@ -200,6 +210,51 @@ function LoanApplications() {
       normalizeStatus(status) === statusFilter.toLowerCase()
 
     return matchesSearch && matchesStatus
+
+
+async function calculateRenewal() {
+  const applicationId = getValue(
+    selectedApplication,
+    'ApplicationID',
+    'applicationId'
+  )
+
+  if (!applicationId) {
+    setError('Application ID is missing.')
+    return
+  }
+
+  if (!renewalForm.reloanAmount || Number(renewalForm.reloanAmount) <= 0) {
+    setError('Please enter a valid renewal amount.')
+    return
+  }
+
+  try {
+    setCalculatingRenewal(true)
+    setError('')
+    setRenewalPreview(null)
+
+    const result = await sendRequest({
+      action: 'calculateRenewalPreview',
+      applicationId,
+      reloanAmount: Number(renewalForm.reloanAmount),
+      settlementMethod: renewalForm.settlementMethod,
+      includeInsurance: renewalForm.includeInsurance,
+      surcharge: Number(renewalForm.surcharge || 0)
+    })
+
+    if (!result.success || !result.preview) {
+      throw new Error(result.message || 'Unable to calculate renewal.')
+    }
+
+    setRenewalPreview(result.preview)
+  } catch (err) {
+    setError(err.message || 'Renewal calculation failed.')
+  } finally {
+    setCalculatingRenewal(false)
+  }
+}
+
   })
 
   const pendingCount = applications.filter(
@@ -492,6 +547,164 @@ function LoanApplications() {
                   </p>
                 )}
               </div>
+
+{String(getValue(selectedApplication, 'ApplicationType', 'applicationType')).toLowerCase() === 'renewal' && (
+  <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+    <div>
+      <h3 className="font-bold text-slate-800">
+        Renewal Loan Computation
+      </h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Calculate the deductions and proceeds from the previous loan.
+      </p>
+    </div>
+
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        New Renewal Amount (PHP)
+      </label>
+      <input
+        type="number"
+        min="1"
+        value={renewalForm.reloanAmount}
+        onChange={event => {
+          setRenewalForm({
+            ...renewalForm,
+            reloanAmount: event.target.value
+          })
+          setRenewalPreview(null)
+        }}
+        placeholder="Enter renewal amount"
+        className="w-full rounded-lg border border-slate-200 bg-white p-3 outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        Settlement Method
+      </label>
+      <select
+        value={renewalForm.settlementMethod}
+        onChange={event => {
+          setRenewalForm({
+            ...renewalForm,
+            settlementMethod: event.target.value
+          })
+          setRenewalPreview(null)
+        }}
+        className="w-full rounded-lg border border-slate-200 bg-white p-3"
+      >
+        <option value="HALF_PRINCIPAL">
+          50% Remaining Principal Rule
+        </option>
+        <option value="FULL_SETTLEMENT">
+          Full Previous Loan Settlement
+        </option>
+      </select>
+    </div>
+
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        Surcharge (PHP)
+      </label>
+      <input
+        type="number"
+        min="0"
+        value={renewalForm.surcharge}
+        onChange={event => {
+          setRenewalForm({
+            ...renewalForm,
+            surcharge: event.target.value
+          })
+          setRenewalPreview(null)
+        }}
+        className="w-full rounded-lg border border-slate-200 bg-white p-3"
+      />
+    </div>
+
+    <label className="flex items-center gap-2 text-sm text-slate-700">
+      <input
+        type="checkbox"
+        checked={renewalForm.includeInsurance}
+        onChange={event => {
+          setRenewalForm({
+            ...renewalForm,
+            includeInsurance: event.target.checked
+          })
+          setRenewalPreview(null)
+        }}
+      />
+      Include insurance (1.62%)
+    </label>
+
+    <button
+      type="button"
+      onClick={calculateRenewal}
+      disabled={calculatingRenewal}
+      className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+    >
+      {calculatingRenewal ? 'Calculating...' : 'Calculate Renewal'}
+    </button>
+
+    {renewalPreview && (
+      <div className="space-y-3 border-t border-blue-200 pt-4">
+        <h4 className="font-bold text-slate-800">
+          Computation Results
+        </h4>
+
+        {[
+          ['Original Principal', renewalPreview.originalPrincipal],
+          ['Outstanding Principal', renewalPreview.outstandingPrincipal],
+          ['50% Principal Target', renewalPreview.halfPrincipalTarget],
+          ['Standing Balance', renewalPreview.standingBalance],
+          ['Past Due Interest', renewalPreview.pastDueInterest],
+          ['Required Principal Payment', renewalPreview.requiredPrincipalPayment],
+          ['Previous Principal Deduction', renewalPreview.previousPrincipalDeduction],
+          ['Notarial Fee', renewalPreview.notarialFee],
+          ['CBU (2%)', renewalPreview.cbu],
+          ['Service Fee', renewalPreview.serviceFee],
+          ['Insurance', renewalPreview.insurance],
+          ['Surcharge', renewalPreview.surcharge],
+          ['Total Fees', renewalPreview.totalFees],
+          ['Net Before Required Payment', renewalPreview.netBeforeRequiredPayment]
+        ].map(([label, value]) => (
+          <div
+            key={label}
+            className="flex justify-between gap-3 border-b border-slate-100 py-2 text-sm"
+          >
+            <span className="text-slate-500">{label}</span>
+            <span className="font-semibold text-slate-800">
+              {formatAmount(value)}
+            </span>
+          </div>
+        ))}
+
+        <div className="rounded-lg bg-white p-4">
+          <p className="text-sm font-medium text-slate-500">
+            Final Net Proceeds
+          </p>
+          <p className={`mt-1 text-2xl font-bold ${
+            renewalPreview.finalNetProceeds < 0
+              ? 'text-red-600'
+              : 'text-green-600'
+          }`}>
+            {formatAmount(renewalPreview.finalNetProceeds)}
+          </p>
+
+          <p className="mt-2 text-sm text-slate-600">
+            {renewalPreview.employeeMustPay > 0
+              ? `Employee must pay ${formatAmount(renewalPreview.employeeMustPay)}.`
+              : `Employee receives ${formatAmount(renewalPreview.employeeReceives)}.`}
+          </p>
+        </div>
+
+        <p className="text-xs text-amber-700">
+          This is a preview only. No loan or payment records have been changed.
+        </p>
+      </div>
+    )}
+  </div>
+)}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
